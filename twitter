@@ -1,0 +1,126 @@
+# Imports
+import tensorflow as tf
+from keras.preprocessing.text import Tokenizer
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Activation, Dropout, LeakyReLU
+from tensorflow.keras import initializers
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.optimizers import Adam, RMSprop, SGD
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from collections import Counter
+
+# Giving Colab access to the drive like last time...we have to do this every time since we're using Colab
+from google.colab import drive
+drive.mount("/content/gdrive/", force_remount=True)
+root_path = 'gdrive/My Drive/CAIS++/Twitter/data'
+
+# Read data and print to check
+data = "gdrive/My Drive/CAIS++/Twitter/data.csv"
+read_data = pd.read_csv(data)
+read_data.head()
+
+full_data = pd.DataFrame()
+full_data = read_data
+print("Training Data Size: ", full_data.shape)
+
+full_data.info()
+
+# Full_datas visulization
+temp = full_data.groupby('valence').count()['tweet'].reset_index().sort_values(by='tweet',ascending=False)
+temp.style.background_gradient(cmap='Purples')
+
+# Smaller copy of database 
+datas = full_data[::10]
+datas.head()
+
+# Full_datas visulization
+temp = datas.groupby('valence').count()['tweet'].reset_index().sort_values(by='tweet',ascending=False)
+temp.style.background_gradient(cmap='Purples')
+
+# Helper function
+def remove_pattern(input_txt, pattern):
+    r = re.findall(pattern, input_txt)
+    for i in r:
+        input_txt = re.sub(i, '', input_txt)
+    return input_txt
+   
+import re
+re.compile('<title>(.*)</title>')
+
+# Data preprocessing
+datas['clean_tweet'] = np.vectorize(remove_pattern)(datas['tweet'], "@[\w]*")
+datas['clean_tweet'] = np.vectorize(remove_pattern)(datas['clean_tweet'], "https?://[A-Za-z0-9./]*")
+datas['clean_tweet'] = datas['clean_tweet'].apply(lambda x: x.lower())
+datas['clean_tweet'] = datas['clean_tweet'].apply(lambda x: re.sub(r'[^a-zA-Z0-9]',' ',x))
+
+datas.head()
+
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+nltk.download('punkt')
+nltk.download('stopwords')
+nltk.download('wordnet')
+
+# Creating token for the clean tweets
+datas['tweet_token'] = datas['clean_tweet'].apply(lambda x: word_tokenize(x))
+
+stop_words = set(stopwords.words('english', 'spanish'))
+
+datas['tweet_token_filtered'] = datas['tweet_token'].apply(lambda x: [word for word in x if not word in stop_words])
+
+# Importing library for stemming
+from nltk.stem import PorterStemmer
+stemming = PorterStemmer()
+
+# Created one more columns tweet_stemmed it shows tweets' stemmed version
+datas['tweet_stemmed'] = datas['tweet_token_filtered'].apply(lambda x: ' '.join([stemming.stem(i) for i in x]))
+
+# Importing library for lemmatizing
+from nltk.stem.wordnet import WordNetLemmatizer
+lemmatizing = WordNetLemmatizer()
+
+datas['tweet_lemmatized'] = datas['tweet_token_filtered'].apply(lambda x: ' '.join([lemmatizing.lemmatize(i) for i in x]))
+datas.head()
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+tfidf_vectorizer = TfidfVectorizer(max_df=0.90, min_df=2, max_features=5000, stop_words='english')
+tfidf_vectorizer
+
+traintfidf_lemm = tfidf_vectorizer.fit_transform(datas['tweet_lemmatized'])
+traintfidf_lemm.toarray()
+
+from sklearn.model_selection import train_test_split
+
+X=traintfidf_lemm
+y=datas['valence']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.25, random_state = 0)
+
+from sklearn.linear_model import LogisticRegression
+classifier = LogisticRegression(random_state = 0)
+classifier.fit(X_train, y_train)
+
+y_pred = classifier.predict(X_test)
+from sklearn.metrics import confusion_matrix
+cm = confusion_matrix(y_test, y_pred)
+
+print(cm)
+
+from sklearn.metrics import classification_report
+print(classification_report(y_test, y_pred))
+
+from sklearn.metrics import accuracy_score
+print("Accuracy: {}".format(round(accuracy_score(y_test, y_pred)*100,2)))
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+new_cm = pd.DataFrame(cm , index = ['NEGATIVE','POSITIVE'] , columns = ['NEGATIVE','POSITIVE'])
+sns.heatmap(new_cm,cmap= 'Blues', annot = True, fmt='',xticklabels = ['NEGATIVE','POSITIVE'], yticklabels = ['NEGATIVE','POSITIVE'])
+plt.xlabel("Actual")
+plt.ylabel("Predicted")
+plt.title('Confusion matrix On Test Data')
+plt.show()
+
